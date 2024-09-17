@@ -266,14 +266,19 @@ st.markdown("""
         padding: 0.1rem 0.1rem;
         font-size: 0.6rem;
         transition: all 0.3s ease;
+        background-color: #4CAF50 !important;  /* 약간 옅은 초록색 배경 */
+        color: white !important;  /* 흰색 글자 */
     }
     .stButton > button:hover {
         transform: translateY(-2px);
         box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        opacity: 0.9;
+        opacity: 0.9;  /* 호버 시 약간 투명해지는 효과 */
     }
     .stTextInput > div > div > input {
         font-size: 0.7rem;
+    }
+    .sidebar .sidebar-content {
+        width: 200px;
     }
     .small-font {
         font-size: 0.7rem;
@@ -283,6 +288,15 @@ st.markdown("""
     }
     .stSlider {
         width: 180px;
+    }
+    
+    .buy-button {
+        background-color: #ff4b4b !important;
+        color: white !important;
+    }
+    .sell-button {
+        background-color: #4b4bff !important;  /* 파란색 배경 */
+        color: white !important;  /* 흰색 글자 */
     }
     .ask-button {
         background-color: #ff4b4b !important;
@@ -330,22 +344,31 @@ with col_right:
     if order_type != "MARKET":
         col1, col2 = st.columns([1, 2])
         with col1:
-            # st.markdown("### 매도 호가")
+            st.markdown("<div style='font-size: 1.1em; margin-bottom: 0.5em;'>매도 호가</div>", unsafe_allow_html=True)
             bids_df, asks_df = st.session_state.orderbook
             if asks_df is not None:
-                for i, ask in asks_df.iterrows():
+                # 첫 번째와 두 번째 행을 건너뛰고 나머지 행을 표시
+                for i, ask in asks_df.iloc[2:].iterrows():
                     if st.button(f"{ask['price']:,.0f}", key=f"ask_btn_{i}", help="클릭하여 가격 선택"):
                         st.session_state.selected_price = f"{ask['price']:,.0f}"
+            
+            
+            st.markdown("<div style='font-size: 1.1em; margin-top: 1em; margin-bottom: 0.5em;'>매수 호가</div>", unsafe_allow_html=True)
+            if asks_df is not None and len(asks_df) > 0:
+                lowest_ask = asks_df['price'].min()
+                for i in range(2):
+                    price = lowest_ask - (i + 1)
+                    if st.button(f"{price:,.0f}", key=f"bid_btn_{i}", help="클릭하여 가격 선택"):
+                        st.session_state.selected_price = f"{price:,.0f}"
             
             # 호가 정보 업데이트 버튼 추가
             if st.button("호가 정보 업데이트", key="update_orderbook"):
                 st.session_state.orderbook = fetch_order_book()
                 st.success("호가 정보가 업데이트되었습니다.")
-        
+
         with col2:
             price_display = st.text_input("가격 (KRW)", st.session_state.get('selected_price', ''), key='price')
             st.markdown('<style>div[data-testid="stTextInput"] > div > div > input { font-size: 1rem !important; }</style>', unsafe_allow_html=True)
-            # 쉼표를 제거하고 숫자만 추출
             price = price_display.replace(',', '') if price_display else None
     else:
         price = None
