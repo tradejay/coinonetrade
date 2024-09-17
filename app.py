@@ -135,10 +135,28 @@ def place_order(order_type, side, price=None, quantity=None):
                 st.error(f"주문 금액이 최소 금액 {MIN_ORDER_AMOUNT_KRW} KRW보다 작습니다.")
                 return
 
-            # 가격 및 수량 포맷팅: 소수점 자리수 조정
-            payload["price"] = f"{price_value:.2f}"  # 가격을 소수점 2자리로 처리
-            payload["qty"] = f"{quantity_value:.4f}"  # 수량을 소수점 4자리로 처리
-            payload["post_only"] = True  # 지정가 주문일 때, post_only 옵션 추가
+            # 현재 시장 가격 조회
+            bids_df, asks_df = fetch_order_book()
+            if asks_df is not None and not asks_df.empty:
+                market_price = asks_df['price'].min()
+            else:
+                st.error("현재 시장 가격을 조회할 수 없습니다.")
+                return
+
+            # 지정가가 시장가 이하인 경우 시장가 주문으로 변경
+            if price_value <= market_price:
+                order_type = "MARKET"
+                payload["type"] = "MARKET"
+                payload["limit_price"] = f"{price_value:.2f}"
+                if side == "SELL":
+                    payload["qty"] = f"{quantity_value:.4f}"
+                else:
+                    payload["amount"] = f"{price_value * quantity_value:.2f}"
+            else:
+                # 일반 지정가 주문
+                payload["price"] = f"{price_value:.2f}"
+                payload["qty"] = f"{quantity_value:.4f}"
+                payload["post_only"] = True
 
         # MARKET 주문인 경우
         elif order_type == "MARKET":
@@ -210,7 +228,7 @@ def cancel_order(order_id):
 
 # 자동으로 잔고와 주문내역 업데이트 함수
 def update_data():
-    if st.session_state.get('last_update_time', 0) < time.time() - 1:
+    if st.session_state.get('last_update_time', 0) < time.time() - 0.5:
         st.session_state.balances = fetch_balances()
         st.session_state.orders = fetch_active_orders()
         st.session_state.orderbook = fetch_order_book()
@@ -245,11 +263,11 @@ st.set_page_config(layout="wide")
 if 'orderbook' not in st.session_state:
     st.session_state.orderbook = fetch_order_book()
 
-# 업데이트 호출
-update_data()
+# # 업데이트 호출
+# update_data()
 
-# 잔고 정보 표시
-update_balance_info()
+# # 잔고 정보 표시
+# update_balance_info()
 
 # 스타일 설정
 st.markdown("""
@@ -319,119 +337,131 @@ st.markdown("""
 
 # 메인 페이지 내용
 # st.title("Coinone 매도 Tool", anchor=False)
+update_placeholder = st.empty()
 
 # 주문 창
 col_left, col_right = st.columns([1, 1])
 
 with col_right:
-    # st.markdown("<div class='order-box'>", unsafe_allow_html=True)
-    # # st.subheader("매도 주문", anchor=False)
-    
-    order_type_display = st.selectbox("주문 유형", ["지정가"], key='order_type')
-    order_type = "LIMIT" if order_type_display == "지정가" else "MARKET" if order_type_display == "시장가" else "STOP_LIMIT"
-
-    side = "SELL"
-
-    if order_type != "MARKET":
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("<div style='font-size: 1.1em; margin-bottom: 0.5em;'>매도 호가</div>", unsafe_allow_html=True)
-    order_type = "LIMIT" if order_type_display == "지정가" else "MARKET" if order_type_display == "시장가" else "STOP_LIMIT"
-
-    side_display = "매도"
-    side = "SELL"
-
-    if order_type != "MARKET":
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("<div style='font-size: 1.1em; margin-bottom: 0.5em;'>매도 호가</div>", unsafe_allow_html=True)
-            bids_df, asks_df = st.session_state.orderbook
-            if asks_df is not None:
-                # 첫 번째와 두 번째 행을 건너뛰고 나머지 행을 표시
-                for i, ask in asks_df.iloc[2:].iterrows():
-                    if st.button(f"{ask['price']:,.0f}", key=f"ask_btn_{i}", help="클릭하여 가격 선택"):
-                        st.session_state.selected_price = f"{ask['price']:,.0f}"
-            
-            
-            st.markdown("<div style='font-size: 1.1em; margin-top: 1em; margin-bottom: 0.5em;'>매수 호가</div>", unsafe_allow_html=True)
-            if asks_df is not None and len(asks_df) > 0:
-                lowest_ask = asks_df['price'].min()
-                for i in range(2):
-                    price = lowest_ask - (i + 1)
-                    if st.button(f"{price:,.0f}", key=f"bid_btn_{i}", help="클릭하여 가격 선택"):
-                        st.session_state.selected_price = f"{price:,.0f}"
-            
-            # 호가 정보 업데이트 버튼 추가
-            if st.button("호가 정보 업데이트", key="update_orderbook"):
-                st.session_state.orderbook = fetch_order_book()
-                st.success("호가 정보가 업데이트되었습니다.")
-
-        with col2:
-            price_display = st.text_input("가격 (KRW)", st.session_state.get('selected_price', ''), key='price')
-            st.markdown('<style>div[data-testid="stTextInput"] > div > div > input { font-size: 1rem !important; }</style>', unsafe_allow_html=True)
-            price = price_display.replace(',', '') if price_display else None
-    else:
-        price = None
-
-    percentage = st.slider("매도 비율 (%)", min_value=0, max_value=100, value=0, step=1, key='percentage')
-
-    # Calculate quantity based on percentage and price
-    quantity = '0'
-    krw_equivalent = 0  # KRW로 환산된 금액
-    if percentage > 0:
-        try:
-            if order_type != "MARKET" and (price is None or price == ''):
-                st.warning("가격을 입력해주세요.")
-            else:
-                price_value = float(price) if price else 0
-                if price_value <= 0:
-                    st.warning("가격은 0보다 커야 합니다.")
-                else:
-                    available_usdt = float(st.session_state.balances.get('usdt', {}).get('available', '0'))
-                    if side == "BUY":
-                        available_krw = float(st.session_state.balances.get('krw', {}).get('available', '0'))
-                        amount_krw = available_krw * (percentage / 100)
-                        quantity_value = amount_krw / price_value
-                        quantity = f"{quantity_value:.4f}"  # 수량을 소수점 4자리로 포맷
-                        krw_equivalent = amount_krw
-                    else:
-                        amount_usdt = available_usdt * (percentage / 100)
-                        quantity_value = amount_usdt
-                        quantity = f"{quantity_value:.4f}"  # 수량을 소수점 4자리로 포맷
-                        krw_equivalent = float(quantity) * price_value
-        except ValueError:
-            st.warning("유효한 가격을 입력해주세요.")
+    while True:
+        with update_placeholder.container():
+            update_data()
+            update_balance_info()
+        # st.markdown("<div class='order-box'>", unsafe_allow_html=True)
+        # # st.subheader("매도 주문", anchor=False)
         
-        st.markdown("<div class='small-font'>", unsafe_allow_html=True)
-        col1, col2 = st.columns(2)
-        with col1:
-            quantity_input = st.text_input("수량 (USDT)", value=f"{float(quantity):,.4f}", disabled=True)
-        with col2:
-            st.write(f"환산 금액: {krw_equivalent:,.2f} KRW")
+        order_type_display = st.selectbox("주문 유형", ["지정가"], key='order_type')
+        order_type = "LIMIT" if order_type_display == "지정가" else "MARKET" if order_type_display == "시장가" else "STOP_LIMIT"
+
+        side = "SELL"
+
+        if order_type != "MARKET":
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                st.markdown("<div style='font-size: 1.1em; margin-bottom: 0.5em;'>매도 호가</div>", unsafe_allow_html=True)
+        order_type = "LIMIT" if order_type_display == "지정가" else "MARKET" if order_type_display == "시장가" else "STOP_LIMIT"
+
+        side_display = "매도"
+        side = "SELL"
+
+        if order_type != "MARKET":
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                st.markdown("<div style='font-size: 1.1em; margin-bottom: 0.5em;'>매도 호가</div>", unsafe_allow_html=True)
+                bids_df, asks_df = st.session_state.orderbook
+                if asks_df is not None:
+                    # 첫 번째와 두 번째 행을 건너뛰고 나머지 행을 표시
+                    for i, ask in asks_df.iloc[2:].iterrows():
+                        if st.button(f"{ask['price']:,.0f}", key=f"ask_btn_{i}", help="클릭하여 가격 선택"):
+                            st.session_state.selected_price = f"{ask['price']:,.0f}"
+                
+                
+                st.markdown("<div style='font-size: 1.1em; margin-top: 1em; margin-bottom: 0.5em;'>매수 호가</div>", unsafe_allow_html=True)
+                if asks_df is not None and len(asks_df) > 0:
+                    lowest_ask = asks_df['price'].min()
+                    for i in range(2):
+                        price = lowest_ask - (i + 1)
+                        if st.button(f"{price:,.0f}", key=f"bid_btn_{i}", help="클릭하여 가격 선택"):
+                            st.session_state.selected_price = f"{price:,.0f}"
+                
+                # 호가 정보 업데이트 버튼 추가
+                if st.button("호가 정보 업데이트", key="update_orderbook"):
+                    st.session_state.orderbook = fetch_order_book()
+                    st.success("호가 정보가 업데이트되었습니다.")
+
+            with col2:
+                price_display = st.text_input("가격 (KRW)", st.session_state.get('selected_price', ''), key='price')
+                st.markdown('<style>div[data-testid="stTextInput"] > div > div > input { font-size: 1rem !important; }</style>', unsafe_allow_html=True)
+                price = price_display.replace(',', '') if price_display else None
+        else:
+            price = None
+
+        percentage = st.slider("매도 비율 (%)", min_value=0, max_value=100, value=0, step=1, key='percentage')
+
+        # Calculate quantity based on percentage and price
+        quantity = '0'
+        krw_equivalent = 0  # KRW로 환산된 금액
+        if percentage > 0:
+            try:
+                if order_type != "MARKET" and (price is None or price == ''):
+                    st.warning("가격을 입력해주세요.")
+                else:
+                    price_value = float(price) if price else 0
+                    if price_value <= 0:
+                        st.warning("가격은 0보다 커야 합니다.")
+                    else:
+                        available_usdt = float(st.session_state.balances.get('usdt', {}).get('available', '0'))
+                        if side == "BUY":
+                            available_krw = float(st.session_state.balances.get('krw', {}).get('available', '0'))
+                            amount_krw = available_krw * (percentage / 100)
+                            quantity_value = amount_krw / price_value
+                            quantity = f"{quantity_value:.4f}"  # 수량을 소수점 4자리로 포맷
+                            krw_equivalent = amount_krw
+                        else:
+                            amount_usdt = available_usdt * (percentage / 100)
+                            quantity_value = amount_usdt
+                            quantity = f"{quantity_value:.4f}"  # 수량을 소수점 4자리로 포맷
+                            krw_equivalent = float(quantity) * price_value
+            except ValueError:
+                st.warning("유효한 가격을 입력해주세요.")
+            
+            st.markdown("<div class='small-font'>", unsafe_allow_html=True)
+            col1, col2 = st.columns(2)
+            with col1:
+                quantity_input = st.text_input("수량 (USDT)", value=f"{float(quantity):,.4f}", disabled=True)
+            with col2:
+                st.write(f"환산 금액: {krw_equivalent:,.2f} KRW")
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            quantity = st.text_input("수량 (USDT)", value="0")
+
+        if st.button(f"{side_display} 주문하기", key="place_order", help="클릭하여 주문 실행"):
+            # 쉼표가 제거된 price 값을 사용
+            place_order(order_type, side, price, quantity)
+            update_data()
+
         st.markdown("</div>", unsafe_allow_html=True)
-    else:
-        quantity = st.text_input("수량 (USDT)", value="0")
 
-    if st.button(f"{side_display} 주문하기", key="place_order", help="클릭하여 주문 실행"):
-        # 쉼표가 제거된 price 값을 사용
-        place_order(order_type, side, price, quantity)
+        # 미체결 주문 관련 기능 추가
+        st.markdown("### 매도 미체결 주문")
+        orders = fetch_active_orders()
+        sell_orders = [order for order in orders if order['side'] == 'SELL']
+        
+        if sell_orders:
+            for order in sell_orders:
+                col1, col2, col3, col4, col5 = st.columns(5)
+                col1.write(f"종목: {order['target_currency']}")
+                col2.write(f"유형: {order['type']}")
+                col3.write(f"가격: {float(order['price']):,.2f}")
+                col4.write(f"수량: {float(order['remain_qty']):,.4f}")
+                if col5.button(f"취소", key=f"cancel_{order['order_id']}", help="클릭하여 주문 취소"):
+                    cancel_order(order['order_id'])
+                    update_data()
+                    st.rerun()
+        else:
+            st.info("매도 미체결 주문 없음")
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # 미체결 주문 관련 기능 추가
-    st.markdown("### 매도 미체결 주문")
-    orders = fetch_active_orders()
-    sell_orders = [order for order in orders if order['side'] == 'SELL']
+        time.sleep(1)
     
-    if sell_orders:
-        for order in sell_orders:
-            col1, col2, col3, col4, col5 = st.columns(5)
-            col1.write(f"종목: {order['target_currency']}")
-            col2.write(f"유형: {order['type']}")
-            col3.write(f"가격: {float(order['price']):,.2f}")
-            col4.write(f"수량: {float(order['remain_qty']):,.4f}")
-            if col5.button(f"취소", key=f"cancel_{order['order_id']}", help="클릭하여 주문 취소"):
-                cancel_order(order['order_id'])
-                st.rerun()
-    else:
-        st.info("매도 미체결 주문 없음")
+        # 페이지 재실행
+        st.rerun()
