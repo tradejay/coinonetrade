@@ -344,6 +344,7 @@ with col_right:
         
         with col2:
             price_display = st.text_input("가격 (KRW)", st.session_state.get('selected_price', ''), key='price')
+            st.markdown('<style>div[data-testid="stTextInput"] > div > div > input { font-size: 1rem !important; }</style>', unsafe_allow_html=True)
             # 쉼표를 제거하고 숫자만 추출
             price = price_display.replace(',', '') if price_display else None
     else:
