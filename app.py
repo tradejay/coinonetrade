@@ -217,7 +217,7 @@ def update_data():
         st.session_state.last_update_time = time.time()
 
 # Streamlit UI 설정
-st.title("Coinone 종합 거래 도구")
+st.title("Coinone 매도 Tool")
 
 # 초기 세션 상태 설정
 if 'selected_price' not in st.session_state:
