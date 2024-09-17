@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import httplib2
 import time
+import math
 
 # 사용자 정보 (토큰 및 키) - secrets.toml에서 가져오기
 ACCESS_TOKEN = st.secrets.get("access_key", "")
@@ -405,25 +406,29 @@ with col_right:
                         available_krw = float(st.session_state.balances.get('krw', {}).get('available', '0'))
                         amount_krw = available_krw * (percentage / 100)
                         quantity_value = amount_krw / price_value
-                        quantity = f"{quantity_value:.4f}"  # 수량을 소수점 4자리로 포맷
+                        quantity = f"{math.floor(quantity_value)}"  # 수량을 정수로 내림 처리
                         krw_equivalent = amount_krw
                     else:
                         amount_usdt = available_usdt * (percentage / 100)
-                        quantity_value = amount_usdt
-                        quantity = f"{quantity_value:.4f}"  # 수량을 소수점 4자리로 포맷
-                        krw_equivalent = float(quantity) * price_value
+                        # 0단위 내림 처리
+                        quantity_value = math.floor(amount_usdt)
+                        quantity = f"{quantity_value}"  # 수량을 정수로 포맷
+                        krw_equivalent = quantity_value * price_value
         except ValueError:
             st.warning("유효한 가격을 입력해주세요.")
         
         st.markdown("<div class='small-font'>", unsafe_allow_html=True)
         col1, col2 = st.columns(2)
         with col1:
-            quantity_input = st.text_input("수량 (USDT)", value=f"{float(quantity):,.4f}", disabled=True)
+            quantity_input = st.text_input("수량 (USDT)", value=quantity, disabled=True)
         with col2:
-            st.write(f"환산 금액: {krw_equivalent:,.2f} KRW")
+            st.write(f"환산 금액: {krw_equivalent:,.0f} KRW")
         st.markdown("</div>", unsafe_allow_html=True)
     else:
         quantity = st.text_input("수량 (USDT)", value="0")
+
+
+
 
     if st.button(f"{side_display} 주문하기", key="place_order", help="클릭하여 주문 실행"):
         place_order(order_type, side, price, quantity)
