@@ -6,6 +6,7 @@ import uuid  # 파일 상단에 이 줄을 추가해주세요
 st.set_page_config(layout="wide")
 
 from datetime import datetime, timedelta
+import subprocess
 
 import requests
 import pandas as pd
@@ -29,6 +30,16 @@ SECRET_KEY = bytes(st.secrets.get("private_key", ""), 'utf-8')
 # 현재 작업 디렉토리 출력
 current_directory = os.getcwd()
 st.write(f"현재 작업 디렉토리: {current_directory}")
+
+
+def update_git_repo():
+    try:
+        subprocess.run(["git", "add", "order_log.json"], check=True)
+        subprocess.run(["git", "commit", "-m", "Update order log"], check=True)
+        subprocess.run(["git", "push"], check=True)
+        st.success("Git 저장소가 성공적으로 업데이트되었습니다.")
+    except subprocess.CalledProcessError as e:
+        st.error(f"Git 업데이트 중 오류 발생: {e}")
 
 
 def fetch_order_detail(order_id):
@@ -265,6 +276,7 @@ def place_order(order_type, side, price, quantity):
         log_data["error_message"] = str(e)
     finally:
         save_log(log_data)
+        update_git_repo()
 
     return log_data["status"] == "success"
 
