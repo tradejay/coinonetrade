@@ -257,6 +257,9 @@ def place_order(order_type, side, price, quantity):
             log_data["order_id"] = order_id
             log_data["response"] = result
             
+            # 여기서 로그를 저장하고 Git에 커밋
+            save_order_log(log_data)
+            
             if 'order_tracking' not in st.session_state:
                 st.session_state.order_tracking = {}
             st.session_state.order_tracking[order_uuid] = {
@@ -274,16 +277,20 @@ def place_order(order_type, side, price, quantity):
             st.error("주문 오류 발생")
             log_data["status"] = "api_error"
             log_data["error_message"] = "API 응답 실패"
+            # 에러 로그도 저장하고 Git에 커밋
+            save_order_log(log_data)
 
     except ValueError as e:
         st.error(f"입력 오류: {e}")
         log_data["status"] = "input_error"
         log_data["error_message"] = str(e)
+        # 에러 로그도 저장하고 Git에 커밋
+        save_order_log(log_data)
     except Exception as e:
         st.error(f"주문 처리 중 오류 발생: {e}")
         log_data["status"] = "processing_error"
         log_data["error_message"] = str(e)
-    finally:
+        # 에러 로그도 저장하고 Git에 커밋
         save_order_log(log_data)
 
     return log_data["status"] == "success"
@@ -595,6 +602,6 @@ with col_right:
         
         st.write(f"{order_id}")
         st.write(f"가격: {log['price']} / 수량: {log['quantity']} / 상태: {log['status']}")
-        st.write("---") 
+        st.write("---")  # 각 주문 사이에 구분선 추가
     
 
