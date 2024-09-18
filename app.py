@@ -1,4 +1,12 @@
 import streamlit as st
+import uuid  # 파일 상단에 이 줄을 추가해주세요
+
+
+# Streamlit UI 설정
+st.set_page_config(layout="wide")
+
+from datetime import datetime, timedelta
+
 import requests
 import pandas as pd
 import json
@@ -9,11 +17,39 @@ import hmac
 import httplib2
 import time
 import math
+import json
+import os
+from datetime import datetime
+
 
 # 사용자 정보 (토큰 및 키) - secrets.toml에서 가져오기
 ACCESS_TOKEN = st.secrets.get("access_key", "")
 SECRET_KEY = bytes(st.secrets.get("private_key", ""), 'utf-8')
 
+# 현재 작업 디렉토리 출력
+current_directory = os.getcwd()
+st.write(f"현재 작업 디렉토리: {current_directory}")
+
+
+def fetch_order_detail(order_id):
+    action = "/v2.1/order/detail"
+    payload = {
+        "access_token": ACCESS_TOKEN,
+        "nonce": str(uuid.uuid4()),
+        "order_id": order_id,
+        "quote_currency": "KRW",
+        "target_currency": "USDT"
+    }
+
+    result = get_response(action, payload)
+
+    if result and result.get('result') == 'success':
+        return result.get('order')
+    else:
+        st.error("주문 조회 오류 발생")
+        return None
+
+    
 def get_encoded_payload(payload):
     payload['nonce'] = str(uuid.uuid4())  # nonce 추가
     dumped_json = json.dumps(payload)
@@ -37,7 +73,17 @@ def get_response(action, payload):
     response, content = http.request(url, 'POST', body=encoded_payload, headers=headers)
 
     print(f"HTTP Status Code: {response.status}")
-    print(f"Response Content: {content.decode('utf-8')}")
+    try:
+        json_content = json.loads(content.decode('utf-8'))
+        if 'balances' in json_content:
+            filtered_balances = [balance for balance in json_content['balances'] if balance['currency'] in ['KRW', 'USDT']]
+            json_content['balances'] = filtered_balances
+        
+        print(f"Filtered Response Content: {json.dumps(json_content, indent=2)}")
+        return json_content
+    except json.JSONDecodeError:
+        print(f"Response Content (raw): {content.decode('utf-8')}")
+        return None
 
     try:
         json_content = json.loads(content.decode('utf-8'))
@@ -52,6 +98,43 @@ def get_response(action, payload):
         st.error(f"JSONDecodeError: {e}")
         st.error(f"Response content: {content.decode('utf-8')}")
         return None
+    
+
+def save_log(log_data):
+    log_file = 'order_log.json'
+    full_path = os.path.join(current_directory, log_file)
+    st.write(f"로그 파일 경로: {full_path}")
+    
+    try:
+        if os.path.exists(full_path):
+            with open(full_path, 'r') as f:
+                logs = json.load(f)
+        else:
+            logs = []
+        
+        logs.append(log_data)
+        
+        with open(full_path, 'w') as f:
+            json.dump(logs, f, indent=2)
+        
+        st.success(f"로그가 성공적으로 저장되었습니다: {full_path}")
+        
+        # 로그 표시
+        st.markdown("### 최근 주문 로그")
+        st.write(f"시간: {log_data['timestamp']}")
+        st.write(f"주문 유형: {log_data['order_type']}")
+        st.write(f"매수/매도: {log_data['side']}")
+        st.write(f"가격: {log_data['price']}")
+        st.write(f"수량: {log_data['quantity']}")
+        st.write(f"상태: {log_data['status']}")
+        st.write("---")
+        
+    except Exception as e:
+        st.error(f"로그 저장 중 오류 발생: {str(e)}")
+        st.error(f"현재 디렉토리: {current_directory}")
+        st.error(f"파일 경로: {full_path}")
+
+        
 
 # 호가 조회 함수
 def fetch_order_book():
@@ -92,111 +175,99 @@ def fetch_balances():
         for balance in balances:
             currency = balance.get('currency', '').lower()
             if currency in ['krw', 'usdt']:
-                filtered_balances[currency] = balance
+                filtered_balances[currency] = {
+                    'available': float(balance.get('available', '0')),
+                    'limit': float(balance.get('limit', '0')),
+                    'total': float(balance.get('available', '0')) + float(balance.get('limit', '0'))
+                }
         return filtered_balances
     else:
         st.error("잔고 조회 오류 발생")
         return {}
 
 # 매수/매도 주문 함수
-def place_order(order_type, side, price=None, quantity=None):
+def place_order(order_type, side, price, quantity):
     action = "/v2.1/order"
-    payload = {
-        "access_token": ACCESS_TOKEN,
-        "nonce": str(uuid.uuid4()),
+    order_uuid = str(uuid.uuid4())
+    log_data = {
+        "timestamp": datetime.now().isoformat(),
+        "uuid": order_uuid,
+        "order_type": "LIMIT",  # 항상 지정가로 설정
         "side": side,
-        "quote_currency": "KRW",
-        "target_currency": "USDT",
-        "type": order_type,
+        "price": price,
+        "quantity": quantity,
+        "status": "initiated"
     }
 
-    # 최소 주문 기준 설정
-    MIN_ORDER_AMOUNT_KRW = 1000  # 예시로 설정한 최소 금액 (KRW)
-    MIN_ORDER_QTY_USDT = 0.001  # 예시로 설정한 최소 수량 (USDT)
-
-    # 수량 검증 및 변환
-    if quantity is None or str(quantity).strip() == '':
-        st.error("수량이 입력되지 않았습니다. 유효한 수량을 입력해주세요.")
-        return
-
     try:
-        # 수량을 안전하게 float으로 변환
+        payload = {
+            "access_token": ACCESS_TOKEN,
+            "nonce": order_uuid,
+            "side": side,
+            "quote_currency": "KRW",
+            "target_currency": "USDT",
+            "type": "LIMIT",  # 항상 지정가로 설정
+            "price": f"{float(price):.2f}",
+            "qty": f"{float(quantity):.4f}",
+            "post_only": False  # 이 줄을 추가합니다
+        }
+
+        # 최소 주문 기준 설정
+        MIN_ORDER_AMOUNT_KRW = 1000
+        MIN_ORDER_QTY_USDT = 0.001
+
+        price_value = float(price)
         quantity_value = float(quantity)
 
-        # LIMIT 주문인 경우
-        if order_type == "LIMIT" and price:
-            price_value = float(price)
-            
-            if price_value <= 0 or quantity_value <= 0:
-                st.error("가격 및 수량은 0보다 커야 합니다.")
-                return
-            
-            # 최소 주문 금액 기준 확인
-            if price_value * quantity_value < MIN_ORDER_AMOUNT_KRW:
-                st.error(f"주문 금액이 최소 금액 {MIN_ORDER_AMOUNT_KRW} KRW보다 작습니다.")
-                return
+        if price_value <= 0 or quantity_value <= 0:
+            raise ValueError("가격 및 수량은 0보다 커야 합니다.")
+        
+        if price_value * quantity_value < MIN_ORDER_AMOUNT_KRW:
+            raise ValueError(f"주문 금액이 최소 금액 {MIN_ORDER_AMOUNT_KRW} KRW보다 작습니다.")
 
-            # 현재 시장 가격 조회
-            bids_df, asks_df = fetch_order_book()
-            if asks_df is not None and not asks_df.empty:
-                market_price = asks_df['price'].min()
-            else:
-                st.error("현재 시장 가격을 조회할 수 없습니다.")
-                return
+        if quantity_value < MIN_ORDER_QTY_USDT:
+            raise ValueError(f"주문 수량이 최소 수량 {MIN_ORDER_QTY_USDT} USDT보다 작습니다.")
 
-            # 지정가가 시장가 이하인 경우 시장가 주문으로 변경
-            if price_value <= market_price:
-                order_type = "MARKET"
-                payload["type"] = "MARKET"
-                payload["limit_price"] = f"{price_value:.2f}"
-                if side == "SELL":
-                    payload["qty"] = f"{quantity_value:.4f}"
-                else:
-                    payload["amount"] = f"{price_value * quantity_value:.2f}"
-            else:
-                # 일반 지정가 주문
-                payload["price"] = f"{price_value:.2f}"
-                payload["qty"] = f"{quantity_value:.4f}"
-                payload["post_only"] = True
+        result = get_response(action, payload)
 
-        # MARKET 주문인 경우
-        elif order_type == "MARKET":
-            if quantity_value <= 0:
-                st.error("매수 금액/매도 수량은 0보다 커야 합니다.")
-                return
+        if result and result.get('result') == 'success':
+            order_id = result.get('order_id')
+            st.success(f"{side} 주문이 성공적으로 접수되었습니다. 주문 ID: {order_id}")
+            log_data["status"] = "success"
+            log_data["order_id"] = order_id
+            log_data["response"] = result
             
-            # 시장가 매수 시 최소 금액 확인
-            if side == "BUY":
-                if quantity_value < MIN_ORDER_AMOUNT_KRW:
-                    st.error(f"주문 금액이 최소 금액 {MIN_ORDER_AMOUNT_KRW} KRW보다 작습니다.")
-                    return
-                payload["amount"] = f"{quantity_value:.2f}"  # 시장가 매수 시 amount 사용, 소수점 2자리 제한
+            if 'order_tracking' not in st.session_state:
+                st.session_state.order_tracking = {}
+            st.session_state.order_tracking[order_uuid] = {
+                'order_id': order_id,
+                'status': 'pending',
+                'side': side,
+                'type': "LIMIT",
+                'price': price,
+                'quantity': quantity
+            }
             
-            # 시장가 매도 시 최소 수량 확인
-            else:
-                if quantity_value < MIN_ORDER_QTY_USDT:
-                    st.error(f"주문 수량이 최소 수량 {MIN_ORDER_QTY_USDT} USDT보다 작습니다.")
-                    return
-                payload["qty"] = f"{quantity_value:.4f}"  # 시장가 매도 시 qty 사용, 소수점 4자리 제한
+            st.session_state.orders = fetch_active_orders()
+            st.rerun()
+        else:
+            st.error("주문 오류 발생")
+            log_data["status"] = "api_error"
+            log_data["error_message"] = "API 응답 실패"
 
     except ValueError as e:
-        st.error(f"가격 또는 수량 입력이 잘못되었습니다: {e}")
-        return
+        st.error(f"입력 오류: {e}")
+        log_data["status"] = "input_error"
+        log_data["error_message"] = str(e)
+    except Exception as e:
+        st.error(f"주문 처리 중 오류 발생: {e}")
+        log_data["status"] = "processing_error"
+        log_data["error_message"] = str(e)
+    finally:
+        save_log(log_data)
 
-    # API 요청 및 결과 처리
-    result = get_response(action, payload)
+    return log_data["status"] == "success"
 
-    if result:
-        st.success(f"{side} 주문이 성공적으로 접수되었습니다. 주문 ID: {result.get('order_id')}")
-        # 주문 성공 후 즉시 미체결 주문 업데이트
-        st.session_state.orders = fetch_active_orders()
-        st.rerun()  # Streamlit 앱 재실행하여 UI 업데이트
-    else:
-        st.error("주문 오류 발생")
-
-    # 주문 버튼 클릭 시 처리
-    if st.button(f"{side_display} 주문하기", key="place_order", help="클릭하여 주문 실행"):
-        place_order(order_type, side, price, quantity)
 
 # 미체결 주문 조회 함수
 def fetch_active_orders():
@@ -263,9 +334,6 @@ def update_balance_info():
     | KRW  | {:,.0f} | {:,.0f} |
     | USDT | {:,.2f} | {:,.2f} |
     """.format(total_krw, available_krw, total_usdt, available_usdt))
-
-# Streamlit UI 설정
-st.set_page_config(layout="wide")
 
 # 초기 세션 상태 설정
 if 'orderbook' not in st.session_state:
@@ -452,3 +520,66 @@ with col_right:
                 st.rerun()
     else:
         st.info("매도 미체결 주문 없음")
+
+    # UUID 조회 기능 추가
+    st.markdown("### 주문 조회")
+    order_id_input = st.text_input("주문 ID 입력", key="order_id_input")
+    if st.button("주문 조회", key="fetch_order_detail"):
+        if order_id_input:
+            order_detail = fetch_order_detail(order_id_input)
+            if order_detail:
+                st.write("주문 정보:")
+                st.markdown(f"""
+                <div style="font-size: 70%;">
+                주문 ID: {order_detail['order_id']}<br><br>
+                주문 유형: {order_detail['type']}<br><br>
+                거래 화폐: {order_detail['quote_currency']}/{order_detail['target_currency']}<br><br>
+                상태: {order_detail['status']}<br><br>
+                매수/매도: {order_detail['side']}<br><br>
+                주문 가격: {order_detail['price']} {order_detail['quote_currency']}<br><br>
+                주문 수량: {order_detail['original_qty']} {order_detail['target_currency']}<br><br>
+                체결된 수량: {order_detail['executed_qty']} {order_detail['target_currency']}<br><br>
+                남은 수량: {order_detail['remain_qty']} {order_detail['target_currency']}<br><br>
+                주문 시간: {datetime.fromtimestamp(int(order_detail['ordered_at'])/1000).strftime('%Y-%m-%d %H:%M:%S')}<br><br>
+                마지막 업데이트: {datetime.fromtimestamp(int(order_detail['updated_at'])/1000).strftime('%Y-%m-%d %H:%M:%S')}
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.warning("해당 주문 ID로 주문을 찾을 수 없습니다.")
+        else:
+            st.warning("주문 ID를 입력해주세요.")
+
+
+    # 최근 주문 정보 표시
+    st.markdown("### 최근 주문 내역")
+    try:
+        with open('order_log.json', 'r') as f:
+            logs = json.load(f)
+        
+        # 주문 시간을 기준으로 내림차순 정렬
+        sorted_logs = sorted(logs, key=lambda x: x['timestamp'], reverse=True)
+        
+        # 최대 20개까지 표시
+        for log in sorted_logs[:20]:
+            # 타임스탬프를 datetime 객체로 변환
+            timestamp = datetime.fromisoformat(log['timestamp'])
+            # UTC 시간을 태국 시간으로 변환 (UTC+7)
+            thailand_time = timestamp + timedelta(hours=7)
+            # 초 단위까지만 포맷팅
+            formatted_time = thailand_time.strftime("%Y-%m-%d %H:%M:%S")
+            st.write(f"주문 시간(태국): {formatted_time}")
+            order_id = log.get('order_id')
+            if order_id is None or order_id == "null":
+                # response 내부의 market_order에서 order_id 찾기
+                response = log.get('response', {})
+                market_order = response.get('market_order', {})
+                order_id = market_order.get('order_id', '주문 ID 없음')
+            
+            st.write(f"{order_id}")
+            st.write("---")  # 각 주문 사이에 구분선 추가
+    except FileNotFoundError:
+        st.info("주문 로그가 없습니다.")
+    except json.JSONDecodeError:
+        st.error("주문 로그 파일을 읽는 중 오류가 발생했습니다.")
+    
+
