@@ -31,36 +31,25 @@ if not st.runtime.exists():
     from dotenv import load_dotenv
     load_dotenv('.streamlit/secrets.toml')
 
-# order_log 초기화
-if 'order_log' not in st.session_state:
-    if 'order_log' in st.secrets:
-        st.session_state.order_log = json.loads(st.secrets['order_log'])
-    else:
-        st.session_state.order_log = []
+# 캐시를 사용하여 로그를 저장하고 불러오는 함수
+@st.experimental_memo(ttl=3600*24*30)  # 30일 동안 캐시 유지
+def get_order_log():
+    return []
 
+@st.experimental_memo(ttl=3600*24*30)  # 30일 동안 캐시 유지
+def update_order_log(logs):
+    return logs
+
+# 로그 불러오기
 def load_order_log():
-    return st.session_state.order_log
+    return get_order_log()
 
+# 로그 저장하기
 def save_order_log(log_data):
-    current_log = load_order_log()
-    current_log.append(log_data)
-    # Keep only the last 100 entries
-    if len(current_log) > 100:
-        current_log = current_log[-100:]
-    st.session_state.order_log = current_log
-    
-    # 로컬 환경에서 파일로 저장
-    if not st.runtime.exists():
-        with open('.streamlit/secrets.toml', 'r') as f:
-            secrets = f.read()
-        secrets = secrets.replace(f"order_log = '{json.dumps(current_log[:-1])}'", 
-                                  f"order_log = '{json.dumps(current_log)}'")
-        with open('.streamlit/secrets.toml', 'w') as f:
-            f.write(secrets)
-    else:
-        # Streamlit Cloud에서는 st.secrets에 저장
-        st.secrets['order_log'] = json.dumps(current_log)
-
+    logs = get_order_log()
+    logs.append(log_data)
+    logs = logs[-100:]  # 최근 100개의 로그만 유지
+    update_order_log(logs)
 
 def fetch_order_detail(order_id):
     action = "/v2.1/order/detail"
@@ -134,7 +123,6 @@ def get_response(action, payload):
 def save_log(log_data):
     try:
         save_order_log(log_data)
-        
         st.success("로그가 성공적으로 저장되었습니다.")
         
         # 로그 표시
@@ -209,7 +197,7 @@ def place_order(order_type, side, price, quantity):
     log_data = {
         "timestamp": datetime.now().isoformat(),
         "uuid": order_uuid,
-        "order_type": "LIMIT",  # 항상 지정가로 설정
+        "order_type": order_type,
         "side": side,
         "price": price,
         "quantity": quantity,
@@ -223,7 +211,7 @@ def place_order(order_type, side, price, quantity):
             "side": side,
             "quote_currency": "KRW",
             "target_currency": "USDT",
-            "type": "LIMIT",  # 항상 지정가로 설정
+            "type": order_type,
             "price": f"{float(price):.2f}",
             "qty": f"{float(quantity):.4f}",
             "post_only": False  # 이 줄을 추가합니다
@@ -260,7 +248,7 @@ def place_order(order_type, side, price, quantity):
                 'order_id': order_id,
                 'status': 'pending',
                 'side': side,
-                'type': "LIMIT",
+                'type': order_type,
                 'price': price,
                 'quantity': quantity
             }
@@ -281,7 +269,7 @@ def place_order(order_type, side, price, quantity):
         log_data["status"] = "processing_error"
         log_data["error_message"] = str(e)
     finally:
-        save_log(log_data)
+        save_order_log(log_data)
 
     return log_data["status"] == "success"
 
@@ -568,29 +556,34 @@ with col_right:
 
 
     # 최근 주문 정보 표시
-st.markdown("### 최근 주문 내역")
-logs = load_order_log()
+    st.markdown("### 최근 주문 내역")
+    logs = load_order_log()
 
-# 주문 시간을 기준으로 내림차순 정렬
-sorted_logs = sorted(logs, key=lambda x: x['timestamp'], reverse=True)
+    # 주문 시간을 기준으로 내림차순 정렬
+    sorted_logs = sorted(logs, key=lambda x: x['timestamp'], reverse=True)
 
-# 최대 20개까지 표시
-for log in sorted_logs[:20]:
-    # 타임스탬프를 datetime 객체로 변환
-    timestamp = datetime.fromisoformat(log['timestamp'])
-    # UTC 시간을 태국 시간으로 변환 (UTC+7)
-    thailand_time = timestamp + timedelta(hours=7)
-    # 초 단위까지만 포맷팅
-    formatted_time = thailand_time.strftime("%Y-%m-%d %H:%M:%S")
-    st.write(f"주문 시간(태국): {formatted_time}")
-    order_id = log.get('order_id')
-    if order_id is None or order_id == "null":
-        # response 내부의 market_order에서 order_id 찾기
-        response = log.get('response', {})
-        market_order = response.get('market_order', {})
-        order_id = market_order.get('order_id', '주문 ID 없음')
-    
-    st.write(f"{order_id}")
-    st.write("---")  # 각 주문 사이에 구분선 추가
+    # 최대 20개까지 표시
+    for log in sorted_logs[:20]:
+        # 타임스탬프를 datetime 객체로 변환
+        timestamp = datetime.fromisoformat(log['timestamp'])
+        # UTC 시간을 태국 시간으로 변환 (UTC+7)
+        thailand_time = timestamp + timedelta(hours=7)
+        # 초 단위까지만 포맷팅
+        formatted_time = thailand_time.strftime("%Y-%m-%d %H:%M:%S")
+        st.write(f"주문 시간(태국): {formatted_time}")
+        order_id = log.get('order_id')
+        if order_id is None or order_id == "null":
+            # response 내부의 market_order에서 order_id 찾기
+            response = log.get('response', {})
+            market_order = response.get('market_order', {})
+            order_id = market_order.get('order_id', '주문 ID 없음')
+        
+        st.write(f"주문 ID: {order_id}")
+        st.write(f"주문 유형: {log['order_type']}")
+        st.write(f"매수/매도: {log['side']}")
+        st.write(f"가격: {log['price']}")
+        st.write(f"수량: {log['quantity']}")
+        st.write(f"상태: {log['status']}")
+        st.write("---")  # 각 주문 사이에 구분선 추가
     
 
