@@ -26,25 +26,40 @@ from datetime import datetime
 ACCESS_TOKEN = st.secrets.get("access_key", "")
 SECRET_KEY = bytes(st.secrets.get("private_key", ""), 'utf-8')
 
-# 현재 작업 디렉토리 출력
-current_directory = os.getcwd()
-st.write(f"현재 작업 디렉토리: {current_directory}")
+# 로컬 환경에서 secrets.toml 파일 로드
+if not st.runtime.exists():
+    from dotenv import load_dotenv
+    load_dotenv('.streamlit/secrets.toml')
 
-
-# Initialize order log from secrets or create an empty list
-if 'order_log' not in st.secrets:
-    st.secrets['order_log'] = json.dumps([])
+# order_log 초기화
+if 'order_log' not in st.session_state:
+    if 'order_log' in st.secrets:
+        st.session_state.order_log = json.loads(st.secrets['order_log'])
+    else:
+        st.session_state.order_log = []
 
 def load_order_log():
-    return json.loads(st.secrets['order_log'])
+    return st.session_state.order_log
 
 def save_order_log(log_data):
     current_log = load_order_log()
     current_log.append(log_data)
-    # Keep only the last 100 entries to prevent the secret from growing too large
+    # Keep only the last 100 entries
     if len(current_log) > 100:
         current_log = current_log[-100:]
-    st.secrets['order_log'] = json.dumps(current_log)
+    st.session_state.order_log = current_log
+    
+    # 로컬 환경에서 파일로 저장
+    if not st.runtime.exists():
+        with open('.streamlit/secrets.toml', 'r') as f:
+            secrets = f.read()
+        secrets = secrets.replace(f"order_log = '{json.dumps(current_log[:-1])}'", 
+                                  f"order_log = '{json.dumps(current_log)}'")
+        with open('.streamlit/secrets.toml', 'w') as f:
+            f.write(secrets)
+    else:
+        # Streamlit Cloud에서는 st.secrets에 저장
+        st.secrets['order_log'] = json.dumps(current_log)
 
 
 def fetch_order_detail(order_id):
