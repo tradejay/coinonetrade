@@ -32,14 +32,13 @@ if not st.runtime.exists():
     load_dotenv('.streamlit/secrets.toml')
 
 # 캐시를 사용하여 로그를 저장하고 불러오는 함수
-@st.experimental_memo(ttl=3600*24*30)  # 30일 동안 캐시 유지
+@@st.cache_data(ttl=3600*24*30)
 def get_order_log():
     return []
 
-@st.experimental_memo(ttl=3600*24*30)  # 30일 동안 캐시 유지
+@st.cache_data(ttl=3600*24*30)
 def update_order_log(logs):
     return logs
-
 # 로그 불러오기
 def load_order_log():
     return get_order_log()
