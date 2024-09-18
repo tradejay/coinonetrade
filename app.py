@@ -6,7 +6,6 @@ import uuid  # 파일 상단에 이 줄을 추가해주세요
 st.set_page_config(layout="wide")
 
 from datetime import datetime, timedelta
-import subprocess
 
 import requests
 import pandas as pd
@@ -32,14 +31,20 @@ current_directory = os.getcwd()
 st.write(f"현재 작업 디렉토리: {current_directory}")
 
 
-def update_git_repo():
-    try:
-        subprocess.run(["git", "add", "order_log.json"], check=True)
-        subprocess.run(["git", "commit", "-m", "Update order log"], check=True)
-        subprocess.run(["git", "push"], check=True)
-        st.success("Git 저장소가 성공적으로 업데이트되었습니다.")
-    except subprocess.CalledProcessError as e:
-        st.error(f"Git 업데이트 중 오류 발생: {e}")
+# Initialize order log from secrets or create an empty list
+if 'order_log' not in st.secrets:
+    st.secrets['order_log'] = json.dumps([])
+
+def load_order_log():
+    return json.loads(st.secrets['order_log'])
+
+def save_order_log(log_data):
+    current_log = load_order_log()
+    current_log.append(log_data)
+    # Keep only the last 100 entries to prevent the secret from growing too large
+    if len(current_log) > 100:
+        current_log = current_log[-100:]
+    st.secrets['order_log'] = json.dumps(current_log)
 
 
 def fetch_order_detail(order_id):
@@ -112,23 +117,10 @@ def get_response(action, payload):
     
 
 def save_log(log_data):
-    log_file = 'order_log.json'
-    full_path = os.path.join(current_directory, log_file)
-    st.write(f"로그 파일 경로: {full_path}")
-    
     try:
-        if os.path.exists(full_path):
-            with open(full_path, 'r') as f:
-                logs = json.load(f)
-        else:
-            logs = []
+        save_order_log(log_data)
         
-        logs.append(log_data)
-        
-        with open(full_path, 'w') as f:
-            json.dump(logs, f, indent=2)
-        
-        st.success(f"로그가 성공적으로 저장되었습니다: {full_path}")
+        st.success("로그가 성공적으로 저장되었습니다.")
         
         # 로그 표시
         st.markdown("### 최근 주문 로그")
@@ -142,8 +134,7 @@ def save_log(log_data):
         
     except Exception as e:
         st.error(f"로그 저장 중 오류 발생: {str(e)}")
-        st.error(f"현재 디렉토리: {current_directory}")
-        st.error(f"파일 경로: {full_path}")
+
 
         
 
@@ -276,7 +267,6 @@ def place_order(order_type, side, price, quantity):
         log_data["error_message"] = str(e)
     finally:
         save_log(log_data)
-        update_git_repo()
 
     return log_data["status"] == "success"
 
@@ -563,35 +553,29 @@ with col_right:
 
 
     # 최근 주문 정보 표시
-    st.markdown("### 최근 주문 내역")
-    try:
-        with open('order_log.json', 'r') as f:
-            logs = json.load(f)
-        
-        # 주문 시간을 기준으로 내림차순 정렬
-        sorted_logs = sorted(logs, key=lambda x: x['timestamp'], reverse=True)
-        
-        # 최대 20개까지 표시
-        for log in sorted_logs[:20]:
-            # 타임스탬프를 datetime 객체로 변환
-            timestamp = datetime.fromisoformat(log['timestamp'])
-            # UTC 시간을 태국 시간으로 변환 (UTC+7)
-            thailand_time = timestamp + timedelta(hours=7)
-            # 초 단위까지만 포맷팅
-            formatted_time = thailand_time.strftime("%Y-%m-%d %H:%M:%S")
-            st.write(f"주문 시간(태국): {formatted_time}")
-            order_id = log.get('order_id')
-            if order_id is None or order_id == "null":
-                # response 내부의 market_order에서 order_id 찾기
-                response = log.get('response', {})
-                market_order = response.get('market_order', {})
-                order_id = market_order.get('order_id', '주문 ID 없음')
-            
-            st.write(f"{order_id}")
-            st.write("---")  # 각 주문 사이에 구분선 추가
-    except FileNotFoundError:
-        st.info("주문 로그가 없습니다.")
-    except json.JSONDecodeError:
-        st.error("주문 로그 파일을 읽는 중 오류가 발생했습니다.")
+st.markdown("### 최근 주문 내역")
+logs = load_order_log()
+
+# 주문 시간을 기준으로 내림차순 정렬
+sorted_logs = sorted(logs, key=lambda x: x['timestamp'], reverse=True)
+
+# 최대 20개까지 표시
+for log in sorted_logs[:20]:
+    # 타임스탬프를 datetime 객체로 변환
+    timestamp = datetime.fromisoformat(log['timestamp'])
+    # UTC 시간을 태국 시간으로 변환 (UTC+7)
+    thailand_time = timestamp + timedelta(hours=7)
+    # 초 단위까지만 포맷팅
+    formatted_time = thailand_time.strftime("%Y-%m-%d %H:%M:%S")
+    st.write(f"주문 시간(태국): {formatted_time}")
+    order_id = log.get('order_id')
+    if order_id is None or order_id == "null":
+        # response 내부의 market_order에서 order_id 찾기
+        response = log.get('response', {})
+        market_order = response.get('market_order', {})
+        order_id = market_order.get('order_id', '주문 ID 없음')
+    
+    st.write(f"{order_id}")
+    st.write("---")  # 각 주문 사이에 구분선 추가
     
 
