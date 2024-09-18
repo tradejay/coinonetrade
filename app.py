@@ -20,7 +20,42 @@ import math
 import json
 import os
 from datetime import datetime
+from git import Repo
 
+# Git 저장소 설정
+REPO_PATH = '.'  # 현재 디렉토리를 저장소로 사용
+LOG_FILE = 'order_logs.json'
+
+def init_git_repo():
+    if not os.path.exists(os.path.join(REPO_PATH, '.git')):
+        repo = Repo.init(REPO_PATH)
+        # 초기 커밋 생성
+        open(os.path.join(REPO_PATH, LOG_FILE), 'a').close()  # 빈 로그 파일 생성
+        repo.index.add([LOG_FILE])
+        repo.index.commit("Initial commit with empty log file")
+    else:
+        repo = Repo(REPO_PATH)
+    return repo
+
+repo = init_git_repo()
+
+def load_order_log():
+    try:
+        with open(os.path.join(REPO_PATH, LOG_FILE), 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+def save_order_log(log_data):
+    logs = load_order_log()
+    logs.append(log_data)
+    logs = logs[-100:]  # 최근 100개의 로그만 유지
+    
+    with open(os.path.join(REPO_PATH, LOG_FILE), 'w') as f:
+        json.dump(logs, f, indent=2)
+    
+    repo.index.add([LOG_FILE])
+    repo.index.commit(f"Update log: {datetime.now().isoformat()}")
 
 # 사용자 정보 (토큰 및 키) - secrets.toml에서 가져오기
 ACCESS_TOKEN = st.secrets.get("access_key", "")
@@ -30,25 +65,6 @@ SECRET_KEY = bytes(st.secrets.get("private_key", ""), 'utf-8')
 if not st.runtime.exists():
     from dotenv import load_dotenv
     load_dotenv('.streamlit/secrets.toml')
-
-# 캐시를 사용하여 로그를 저장하고 불러오는 함수
-@st.cache_data(ttl=3600*24*30)
-def get_order_log():
-    return []
-
-@st.cache_data(ttl=3600*24*30)
-def update_order_log(logs):
-    return logs
-# 로그 불러오기
-def load_order_log():
-    return get_order_log()
-
-# 로그 저장하기
-def save_order_log(log_data):
-    logs = get_order_log()
-    logs.append(log_data)
-    logs = logs[-100:]  # 최근 100개의 로그만 유지
-    update_order_log(logs)
 
 def fetch_order_detail(order_id):
     action = "/v2.1/order/detail"
