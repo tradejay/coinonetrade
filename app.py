@@ -593,12 +593,8 @@ with col_right:
             market_order = response.get('market_order', {})
             order_id = market_order.get('order_id', '주문 ID 없음')
         
-        st.write(f"주문 ID: {order_id}")
-        st.write(f"주문 유형: {log['order_type']}")
-        st.write(f"매수/매도: {log['side']}")
-        st.write(f"가격: {log['price']}")
-        st.write(f"수량: {log['quantity']}")
-        st.write(f"상태: {log['status']}")
-        st.write("---")  # 각 주문 사이에 구분선 추가
+        st.write(f"{order_id}")
+        st.write(f"가격: {log['price']} / 수량: {log['quantity']} / 상태: {log['status']}")
+        st.write("---") 
     
 
