@@ -277,6 +277,7 @@ def place_order(order_type, side, price, quantity):
             }
             
             st.session_state.orders = fetch_active_orders()
+            
             st.experimental_rerun()
         else:
             st.error("주문 오류 발생")
@@ -337,37 +338,6 @@ def cancel_order(order_id):
     else:
         st.error("주문 취소 오류 발생")
 
-# 자동으로 잔고와 주문내역 업데이트 함수
-def update_data():
-    if st.session_state.get('last_update_time', 0) < time.time() - 0.5:
-        st.session_state.balances = fetch_balances()
-        st.session_state.orders = fetch_active_orders()
-        st.session_state.orderbook = fetch_order_book()
-        st.session_state.last_update_time = time.time()
-
-# 잔고 정보 업데이트 및 표시 함수
-def update_balance_info():
-    balances = st.session_state.balances
-    krw_balance = balances.get('krw', {})
-    usdt_balance = balances.get('usdt', {})
-    
-    available_krw = float(krw_balance.get('available', '0'))
-    limit_krw = float(krw_balance.get('limit', '0'))
-    total_krw = available_krw + limit_krw
-    
-    available_usdt = float(usdt_balance.get('available', '0'))
-    limit_usdt = float(usdt_balance.get('limit', '0'))
-    total_usdt = available_usdt + limit_usdt
-
-    st.markdown("""
-    ### 계좌 잔고
-    | 화폐 | 보유 | 주문 가능 |
-    |:-----|-----:|----------:|
-    | KRW  | {:,.0f} | {:,.0f} |
-    | USDT | {:,.2f} | {:,.2f} |
-    """.format(total_krw, available_krw, total_usdt, available_usdt))
-
-
 def place_market_sell_all(initial_balance=None, attempt=1):
     if attempt > 3:  # 최대 3번까지 시도
         st.error("최대 시도 횟수를 초과했습니다. 일부 USDT가 판매되지 않았을 수 있습니다.")
@@ -412,6 +382,35 @@ def place_market_sell_all(initial_balance=None, attempt=1):
             st.success("모든 USDT가 성공적으로 매도되었습니다.")
         return True
 
+# 자동으로 잔고와 주문내역 업데이트 함수
+def update_data():
+    if st.session_state.get('last_update_time', 0) < time.time() - 0.5:
+        st.session_state.balances = fetch_balances()
+        st.session_state.orders = fetch_active_orders()
+        st.session_state.orderbook = fetch_order_book()
+        st.session_state.last_update_time = time.time()
+
+# 잔고 정보 업데이트 및 표시 함수
+def update_balance_info():
+    balances = st.session_state.balances
+    krw_balance = balances.get('krw', {})
+    usdt_balance = balances.get('usdt', {})
+    
+    available_krw = float(krw_balance.get('available', '0'))
+    limit_krw = float(krw_balance.get('limit', '0'))
+    total_krw = available_krw + limit_krw
+    
+    available_usdt = float(usdt_balance.get('available', '0'))
+    limit_usdt = float(usdt_balance.get('limit', '0'))
+    total_usdt = available_usdt + limit_usdt
+
+    st.markdown("""
+    ### 계좌 잔고
+    | 화폐 | 보유 | 주문 가능 |
+    |:-----|-----:|----------:|
+    | KRW  | {:,.0f} | {:,.0f} |
+    | USDT | {:,.2f} | {:,.2f} |
+    """.format(total_krw, available_krw, total_usdt, available_usdt))
 
 # 초기 세션 상태 설정
 if 'orderbook' not in st.session_state:
@@ -585,8 +584,7 @@ with col_right:
                 st.success("호가 정보가 업데이트되었습니다.")
 
         with col2:
-            # Change the key for this text input
-            price_display = st.text_input("가격 (KRW)", st.session_state.get('selected_price', ''), key='price_input')
+            price_display = st.text_input("가격 (KRW)", st.session_state.get('selected_price', ''), key='price')
             st.markdown('<style>div[data-testid="stTextInput"] > div > div > input { font-size: 1rem !important; }</style>', unsafe_allow_html=True)
             price = price_display.replace(',', '') if price_display else None
     else:
@@ -595,6 +593,7 @@ with col_right:
     percentage = st.slider("주문 비율 (%)", min_value=0, max_value=100, value=0, step=1, key='percentage')
 
     # Calculate quantity based on percentage and price
+    quantity = '0'
     krw_equivalent = 0  # KRW로 환산된 금액
     if isinstance(percentage, (int, float)) and percentage > 0:
         try:
@@ -619,17 +618,16 @@ with col_right:
                         krw_equivalent = quantity_value * price_value
         except ValueError:
             st.warning("유효한 가격을 입력해주세요.")
+        
+        st.markdown("<div class='small-font'>", unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            quantity_input = st.text_input("수량 (USDT)", value=quantity, disabled=True)
+        with col2:
+            st.write(f"환산 금액: {krw_equivalent:,.0f} KRW")
+        st.markdown("</div>", unsafe_allow_html=True)
     else:
         quantity = st.text_input("수량 (USDT)", value="0")
-
-    st.markdown("<div class='small-font'>", unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-    with col1:
-        # Change the key for this text input
-        quantity_input = st.text_input("수량 (USDT)", value=quantity, disabled=True, key='quantity_display')
-    with col2:
-        st.write(f"환산 금액: {krw_equivalent:,.0f} KRW")
-    st.markdown("</div>", unsafe_allow_html=True)
 
     button_color = "sell-button" if side == "SELL" else "buy-button"
     if st.button(f"{side_display} 주문하기", key="place_order", help="클릭하여 주문 실행"):
@@ -657,15 +655,13 @@ with col_right:
             col5.write(f"수량: {float(order['remain_qty']):,.4f}")
             if col6.button(f"취소", key=f"cancel_{order['order_id']}", help="클릭하여 주문 취소"):
                 cancel_order(order['order_id'])
-                
-            st.experimental_rerun()
+                st.experimental_rerun()
     else:
         st.info("미체결 주문 없음")
 
     # UUID 조회 기능 추가
     st.markdown("### 주문 조회")
-    # Change the key for this text input
-    order_id_input = st.text_input("주문 ID 입력", key="order_id_input_field")
+    order_id_input = st.text_input("주문 ID 입력", key="order_id_input")
     if st.button("주문 조회", key="fetch_order_detail"):
         if order_id_input:
             order_detail = fetch_order_detail(order_id_input)
