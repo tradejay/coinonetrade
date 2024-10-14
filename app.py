@@ -277,7 +277,7 @@ def place_order(order_type, side, price, quantity):
             }
             
             st.session_state.orders = fetch_active_orders()
-            st.rerun()
+            st.experimental_rerun()
         else:
             st.error("주문 오류 발생")
             log_data["status"] = "api_error"
@@ -548,9 +548,8 @@ with col_right:
     percentage = st.slider("주문 비율 (%)", min_value=0, max_value=100, value=0, step=1, key='percentage')
 
     # Calculate quantity based on percentage and price
-    quantity = '0'
     krw_equivalent = 0  # KRW로 환산된 금액
-    if percentage > 0:
+    if isinstance(percentage, (int, float)) and percentage > 0:
         try:
             if order_type != "MARKET" and (price is None or price == ''):
                 st.warning("가격을 입력해주세요.")
@@ -573,32 +572,22 @@ with col_right:
                         krw_equivalent = quantity_value * price_value
         except ValueError:
             st.warning("유효한 가격을 입력해주세요.")
-        
-        st.markdown("<div class='small-font'>", unsafe_allow_html=True)
-        col1, col2 = st.columns(2)
-        with col1:
-            quantity_input = st.text_input("수량 (USDT)", value=quantity, disabled=True)
-        with col2:
-            st.write(f"환산 금액: {krw_equivalent:,.0f} KRW")
-        st.markdown("</div>", unsafe_allow_html=True)
     else:
         quantity = st.text_input("수량 (USDT)", value="0")
 
-    button_color = "sell-button" if side == "SELL" else "buy-button"
-    
-    if side == "BUY":
-        button_text = f'{side_display} 주문하기'
-    else:
-        button_text = f'{side_display} 주문하기'
+    st.markdown("<div class='small-font'>", unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        quantity_input = st.text_input("수량 (USDT)", value=quantity, disabled=True)
+    with col2:
+        st.write(f"환산 금액: {krw_equivalent:,.0f} KRW")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    if st.button(button_text, key="place_order", help="클릭하여 주문 실행", use_container_width=True):
+    button_color = "sell-button" if side == "SELL" else "buy-button"
+    if st.button(f"{side_display} 주문하기", key="place_order", help="클릭하여 주문 실행"):
         place_order(order_type, side, price, quantity)
 
-    # 전체 시장가 매도 버튼 추가
-    if st.button("전체 시장가 매도", key="market_sell_all", help="전체 USDT를 시장가로 매도", use_container_width=True):
-        confirm = st.button("정말로 전체 USDT를 시장가로 매도하시겠습니까?", key="confirm_market_sell_all")
-        if confirm:
-            place_market_sell_all()
+    
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -615,8 +604,9 @@ with col_right:
             col4.write(f"가격: {float(order['price']):,.2f}")
             col5.write(f"수량: {float(order['remain_qty']):,.4f}")
             if col6.button(f"취소", key=f"cancel_{order['order_id']}", help="클릭하여 주문 취소"):
-                cancel_order(order['order_id'])
-                st.rerun()
+                cancel_order(order['order_id'])                
+                st.experimental_rerun()
+                
     else:
         st.info("미체결 주문 없음")
 
@@ -677,6 +667,8 @@ with col_right:
         st.write("---")  # 각 주문 사이에 구분선 추가
     
 
+import math
+
 def place_market_sell_all(initial_balance=None, attempt=1):
     if attempt > 3:  # 최대 3번까지 시도
         st.error("최대 시도 횟수를 초과했습니다. 일부 USDT가 판매되지 않았을 수 있습니다.")
@@ -720,3 +712,9 @@ def place_market_sell_all(initial_balance=None, attempt=1):
         else:
             st.success("모든 USDT가 성공적으로 매도되었습니다.")
         return True
+
+# 전체 시장가 매도 버튼 추가
+if st.button("전체 시장가 매도", key="market_sell_all", help="전체 USDT를 시장가로 매도"):
+    confirm = st.button("정말로 전체 USDT를 시장가로 매도하시겠습니까?", key="confirm_market_sell_all")
+    if confirm:
+        place_market_sell_all()
