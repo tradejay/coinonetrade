@@ -473,6 +473,32 @@ with col_right:
     order_type_display = st.selectbox("주문 유형", ["지정가"], key='order_type')
     order_type = "LIMIT" if order_type_display == "지정가" else "MARKET" if order_type_display == "시장가" else "STOP_LIMIT"
 
+    # 커스텀 라디오 버튼 스타일
+    st.markdown("""
+    <style>
+    .stRadio [role=radiogroup] {
+        flex-direction: row;
+        justify-content: space-between;
+    }
+    .stRadio [role=radiogroup] label {
+        width: 50%;
+        padding: 10px;
+        text-align: center;
+        transition: all 0.3s ease;
+    }
+    .stRadio [role=radiogroup] label:first-child {
+        text-align: left;
+    }
+    .stRadio [role=radiogroup] label:last-child {
+        text-align: right;
+    }
+    .stRadio [role=radiogroup] label[data-baseweb="radio"] input:checked + div {
+        background-color: #4CAF50;
+        color: white;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     side_display = st.radio("주문 종류", ["매도", "매수"], horizontal=True, key='side_radio')
     side = "SELL" if side_display == "매도" else "BUY"
 
