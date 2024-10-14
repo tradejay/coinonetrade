@@ -574,7 +574,7 @@ with col_right:
             if bids_df is not None and len(bids_df) > 0:
                 highest_bid = bids_df['price'].max()
                 for i in range(3):  # 3개의 매수 호가 표시
-                    price = highest_bid + i
+                    price = highest_bid - i  # 여기를 수정: + 에서 - 로 변경
                     if st.button(f"{price:,.0f}", key=f"bid_btn_{i}", help="클릭하여 가격 선택"):
                         st.session_state.selected_price = f"{price:,.0f}"
             
