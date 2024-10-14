@@ -585,7 +585,13 @@ with col_right:
         quantity = st.text_input("수량 (USDT)", value="0")
 
     button_color = "sell-button" if side == "SELL" else "buy-button"
-    if st.button(f"{side_display} 주문하기", key="place_order", help="클릭하여 주문 실행", use_container_width=True):
+    
+    if side == "BUY":
+        button_text = f'<span style="float: right;">{side_display} 주문하기</span>'
+    else:
+        button_text = f'<span style="float: left;">{side_display} 주문하기</span>'
+
+    if st.button(button_text, key="place_order", help="클릭하여 주문 실행", use_container_width=True):
         place_order(order_type, side, price, quantity)
 
     # 전체 시장가 매도 버튼 추가
@@ -597,22 +603,22 @@ with col_right:
     st.markdown("</div>", unsafe_allow_html=True)
 
     # 미체결 주문 관련 기능 추가
-    st.markdown(f"### {side_display} 미체결 주문")
+    st.markdown("### 미체결 주문")
     orders = fetch_active_orders()
-    filtered_orders = [order for order in orders if order['side'] == side]
-    
-    if filtered_orders:
-        for order in filtered_orders:
-            col1, col2, col3, col4, col5 = st.columns(5)
+
+    if orders:
+        for order in orders:
+            col1, col2, col3, col4, col5, col6 = st.columns(6)
             col1.write(f"종목: {order['target_currency']}")
             col2.write(f"유형: {order['type']}")
-            col3.write(f"가격: {float(order['price']):,.2f}")
-            col4.write(f"수량: {float(order['remain_qty']):,.4f}")
-            if col5.button(f"취소", key=f"cancel_{order['order_id']}", help="클릭하여 주문 취소"):
+            col3.write(f"매수/매도: {order['side']}")
+            col4.write(f"가격: {float(order['price']):,.2f}")
+            col5.write(f"수량: {float(order['remain_qty']):,.4f}")
+            if col6.button(f"취소", key=f"cancel_{order['order_id']}", help="클릭하여 주문 취소"):
                 cancel_order(order['order_id'])
                 st.rerun()
     else:
-        st.info(f"{side_display} 미체결 주문 없음")
+        st.info("미체결 주문 없음")
 
     # UUID 조회 기능 추가
     st.markdown("### 주문 조회")
