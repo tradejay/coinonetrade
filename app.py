@@ -367,6 +367,52 @@ def update_balance_info():
     | USDT | {:,.2f} | {:,.2f} |
     """.format(total_krw, available_krw, total_usdt, available_usdt))
 
+
+def place_market_sell_all(initial_balance=None, attempt=1):
+    if attempt > 3:  # 최대 3번까지 시도
+        st.error("최대 시도 횟수를 초과했습니다. 일부 USDT가 판매되지 않았을 수 있습니다.")
+        return False
+
+    balances = fetch_balances()
+    usdt_balance = float(balances.get('usdt', {}).get('available', 0))
+    
+    if initial_balance is None:
+        initial_balance = usdt_balance
+
+    if usdt_balance > 0:
+        # 소수점 첫째 자리 아래를 버림 처리
+        sell_amount = math.floor(usdt_balance * 10) / 10
+        result = place_order("MARKET", "SELL", None, str(sell_amount))
+        
+        if result:
+            order_details = fetch_order_detail(result.get('order_id'))
+            if order_details:
+                executed_amount = float(order_details.get('executed_qty', 0))
+                executed_price = float(order_details.get('avg_price', 0))
+                
+                remaining_balance = usdt_balance - executed_amount
+                execution_ratio = executed_amount / initial_balance
+
+                if execution_ratio >= 0.995:  # 99.5% 이상 실행됨
+                    st.success(f"전체 USDT 중 {executed_amount:.1f} USDT가 평균 시장가 {executed_price:.2f} KRW에 매도되었습니다.")
+                    return True
+                else:
+                    st.warning(f"{executed_amount:.1f} USDT가 매도되었습니다. 남은 수량을 다시 매도합니다.")
+                    return place_market_sell_all(initial_balance, attempt + 1)
+            else:
+                st.warning(f"주문이 접수되었지만 상세 정보를 가져올 수 없습니다. 남은 수량을 다시 확인합니다.")
+                return place_market_sell_all(initial_balance, attempt + 1)
+        else:
+            st.error("시장가 매도 중 오류가 발생했습니다.")
+            return False
+    else:
+        if attempt == 1:
+            st.error("판매할 USDT가 없습니다.")
+        else:
+            st.success("모든 USDT가 성공적으로 매도되었습니다.")
+        return True
+
+
 # 초기 세션 상태 설정
 if 'orderbook' not in st.session_state:
     st.session_state.orderbook = fetch_order_book()
@@ -587,7 +633,11 @@ with col_right:
     if st.button(f"{side_display} 주문하기", key="place_order", help="클릭하여 주문 실행"):
         place_order(order_type, side, price, quantity)
 
-    
+    # 전체 시장가 매도 버튼 추가
+    if st.button("전체 시장가 매도", key="market_sell_all", help="전체 USDT를 시장가로 매도"):
+        confirm = st.button("정말로 전체 USDT를 시장가로 매도하시겠습니까?", key="confirm_market_sell_all")
+        if confirm:
+            place_market_sell_all()
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -604,9 +654,9 @@ with col_right:
             col4.write(f"가격: {float(order['price']):,.2f}")
             col5.write(f"수량: {float(order['remain_qty']):,.4f}")
             if col6.button(f"취소", key=f"cancel_{order['order_id']}", help="클릭하여 주문 취소"):
-                cancel_order(order['order_id'])                
-                st.experimental_rerun()
+                cancel_order(order['order_id'])
                 
+            st.experimental_rerun()
     else:
         st.info("미체결 주문 없음")
 
@@ -666,55 +716,3 @@ with col_right:
         st.write(f"가격: {log['price']} / 수량: {log['quantity']} / 상태: {log['status']}")
         st.write("---")  # 각 주문 사이에 구분선 추가
     
-
-import math
-
-def place_market_sell_all(initial_balance=None, attempt=1):
-    if attempt > 3:  # 최대 3번까지 시도
-        st.error("최대 시도 횟수를 초과했습니다. 일부 USDT가 판매되지 않았을 수 있습니다.")
-        return False
-
-    balances = fetch_balances()
-    usdt_balance = float(balances.get('usdt', {}).get('available', 0))
-    
-    if initial_balance is None:
-        initial_balance = usdt_balance
-
-    if usdt_balance > 0:
-        # 소수점 첫째 자리 아래를 버림 처리
-        sell_amount = math.floor(usdt_balance * 10) / 10
-        result = place_order("MARKET", "SELL", None, str(sell_amount))
-        
-        if result:
-            order_details = fetch_order_detail(result.get('order_id'))
-            if order_details:
-                executed_amount = float(order_details.get('executed_qty', 0))
-                executed_price = float(order_details.get('avg_price', 0))
-                
-                remaining_balance = usdt_balance - executed_amount
-                execution_ratio = executed_amount / initial_balance
-
-                if execution_ratio >= 0.995:  # 99.5% 이상 실행됨
-                    st.success(f"전체 USDT 중 {executed_amount:.1f} USDT가 평균 시장가 {executed_price:.2f} KRW에 매도되었습니다.")
-                    return True
-                else:
-                    st.warning(f"{executed_amount:.1f} USDT가 매도되었습니다. 남은 수량을 다시 매도합니다.")
-                    return place_market_sell_all(initial_balance, attempt + 1)
-            else:
-                st.warning(f"주문이 접수되었지만 상세 정보를 가져올 수 없습니다. 남은 수량을 다시 확인합니다.")
-                return place_market_sell_all(initial_balance, attempt + 1)
-        else:
-            st.error("시장가 매도 중 오류가 발생했습니다.")
-            return False
-    else:
-        if attempt == 1:
-            st.error("판매할 USDT가 없습니다.")
-        else:
-            st.success("모든 USDT가 성공적으로 매도되었습니다.")
-        return True
-
-# 전체 시장가 매도 버튼 추가
-if st.button("전체 시장가 매도", key="market_sell_all", help="전체 USDT를 시장가로 매도"):
-    confirm = st.button("정말로 전체 USDT를 시장가로 매도하시겠습니까?", key="confirm_market_sell_all")
-    if confirm:
-        place_market_sell_all()
