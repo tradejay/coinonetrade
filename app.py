@@ -587,9 +587,9 @@ with col_right:
     button_color = "sell-button" if side == "SELL" else "buy-button"
     
     if side == "BUY":
-        button_text = f'<span style="float: right;">{side_display} 주문하기</span>'
+        button_text = f'{side_display} 주문하기'
     else:
-        button_text = f'<span style="float: left;">{side_display} 주문하기</span>'
+        button_text = f'{side_display} 주문하기'
 
     if st.button(button_text, key="place_order", help="클릭하여 주문 실행", use_container_width=True):
         place_order(order_type, side, price, quantity)
