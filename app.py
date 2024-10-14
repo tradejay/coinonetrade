@@ -278,7 +278,7 @@ def place_order(order_type, side, price, quantity):
             
             st.session_state.orders = fetch_active_orders()
             
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("주문 오류 발생")
             log_data["status"] = "api_error"
@@ -655,7 +655,7 @@ with col_right:
             col5.write(f"수량: {float(order['remain_qty']):,.4f}")
             if col6.button(f"취소", key=f"cancel_{order['order_id']}", help="클릭하여 주문 취소"):
                 cancel_order(order['order_id'])
-                st.experimental_rerun()
+                st.rerun()
     else:
         st.info("미체결 주문 없음")
 
