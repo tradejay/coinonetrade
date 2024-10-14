@@ -440,6 +440,26 @@ st.markdown("""
         font-size: 0.6rem !important;
         padding: 2px 5px !important;
     }
+    .stRadio [role=radiogroup] {
+        flex-direction: row;
+        justify-content: space-between;
+    }
+    .stRadio [role=radiogroup] label {
+        width: 50%;
+        padding: 10px;
+        text-align: center;
+        transition: all 0.3s ease;
+    }
+    .stRadio [role=radiogroup] label:first-child {
+        text-align: left;
+    }
+    .stRadio [role=radiogroup] label:last-child {
+        text-align: right;
+    }
+    .stRadio [role=radiogroup] label[data-baseweb="radio"] input:checked + div {
+        background-color: #4CAF50;
+        color: white;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -453,8 +473,20 @@ with col_right:
     order_type_display = st.selectbox("주문 유형", ["지정가"], key='order_type')
     order_type = "LIMIT" if order_type_display == "지정가" else "MARKET" if order_type_display == "시장가" else "STOP_LIMIT"
 
-    side_display = st.radio("주문 종류", ["매도", "매수"], horizontal=True)
+    side_display = st.radio("주문 종류", ["매도", "매수"], horizontal=True, key='side_radio')
     side = "SELL" if side_display == "매도" else "BUY"
+
+    # 선택된 주문 종류에 따라 스타일 적용
+    st.markdown(f"""
+    <style>
+        div[data-testid="stRadio"] > div > label:nth-child(1) {{
+            text-align: {'left' if side == 'SELL' else 'center'};
+        }}
+        div[data-testid="stRadio"] > div > label:nth-child(2) {{
+            text-align: {'center' if side == 'SELL' else 'right'};
+        }}
+    </style>
+    """, unsafe_allow_html=True)
 
     if order_type != "MARKET":
         col1, col2 = st.columns([1, 2])
@@ -529,6 +561,12 @@ with col_right:
     button_color = "sell-button" if side == "SELL" else "buy-button"
     if st.button(f"{side_display} 주문하기", key="place_order", help="클릭하여 주문 실행", use_container_width=True):
         place_order(order_type, side, price, quantity)
+
+    # 전체 시장가 매도 버튼 추가
+    if st.button("전체 시장가 매도", key="market_sell_all", help="전체 USDT를 시장가로 매도", use_container_width=True):
+        confirm = st.button("정말로 전체 USDT를 시장가로 매도하시겠습니까?", key="confirm_market_sell_all")
+        if confirm:
+            place_market_sell_all()
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -606,3 +644,47 @@ with col_right:
         st.write(f"가격: {log['price']} / 수량: {log['quantity']} / 상태: {log['status']}")
         st.write("---")  # 각 주문 사이에 구분선 추가
     
+
+def place_market_sell_all(initial_balance=None, attempt=1):
+    if attempt > 3:  # 최대 3번까지 시도
+        st.error("최대 시도 횟수를 초과했습니다. 일부 USDT가 판매되지 않았을 수 있습니다.")
+        return False
+
+    balances = fetch_balances()
+    usdt_balance = float(balances.get('usdt', {}).get('available', 0))
+    
+    if initial_balance is None:
+        initial_balance = usdt_balance
+
+    if usdt_balance > 0:
+        # 소수점 첫째 자리 아래를 버림 처리
+        sell_amount = math.floor(usdt_balance * 10) / 10
+        result = place_order("MARKET", "SELL", None, str(sell_amount))
+        
+        if result:
+            order_details = fetch_order_detail(result.get('order_id'))
+            if order_details:
+                executed_amount = float(order_details.get('executed_qty', 0))
+                executed_price = float(order_details.get('avg_price', 0))
+                
+                remaining_balance = usdt_balance - executed_amount
+                execution_ratio = executed_amount / initial_balance
+
+                if execution_ratio >= 0.995:  # 99.5% 이상 실행됨
+                    st.success(f"전체 USDT 중 {executed_amount:.1f} USDT가 평균 시장가 {executed_price:.2f} KRW에 매도되었습니다.")
+                    return True
+                else:
+                    st.warning(f"{executed_amount:.1f} USDT가 매도되었습니다. 남은 수량을 다시 매도합니다.")
+                    return place_market_sell_all(initial_balance, attempt + 1)
+            else:
+                st.warning(f"주문이 접수되었지만 상세 정보를 가져올 수 없습니다. 남은 수량을 다시 확인합니다.")
+                return place_market_sell_all(initial_balance, attempt + 1)
+        else:
+            st.error("시장가 매도 중 오류가 발생했습니다.")
+            return False
+    else:
+        if attempt == 1:
+            st.error("판매할 USDT가 없습니다.")
+        else:
+            st.success("모든 USDT가 성공적으로 매도되었습니다.")
+        return True
