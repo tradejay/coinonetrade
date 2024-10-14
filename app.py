@@ -277,8 +277,7 @@ def place_order(order_type, side, price, quantity):
             }
             
             st.session_state.orders = fetch_active_orders()
-            
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("주문 오류 발생")
             log_data["status"] = "api_error"
@@ -337,50 +336,6 @@ def cancel_order(order_id):
         st.success(f"주문이 성공적으로 취소되었습니다. 주문 ID: {order_id}")
     else:
         st.error("주문 취소 오류 발생")
-
-def place_market_sell_all(initial_balance=None, attempt=1):
-    if attempt > 3:  # 최대 3번까지 시도
-        st.error("최대 시도 횟수를 초과했습니다. 일부 USDT가 판매되지 않았을 수 있습니다.")
-        return False
-
-    balances = fetch_balances()
-    usdt_balance = float(balances.get('usdt', {}).get('available', 0))
-    
-    if initial_balance is None:
-        initial_balance = usdt_balance
-
-    if usdt_balance > 0:
-        # 소수점 첫째 자리 아래를 버림 처리
-        sell_amount = math.floor(usdt_balance * 10) / 10
-        result = place_order("MARKET", "SELL", None, str(sell_amount))
-        
-        if result:
-            order_details = fetch_order_detail(result.get('order_id'))
-            if order_details:
-                executed_amount = float(order_details.get('executed_qty', 0))
-                executed_price = float(order_details.get('avg_price', 0))
-                
-                remaining_balance = usdt_balance - executed_amount
-                execution_ratio = executed_amount / initial_balance
-
-                if execution_ratio >= 0.995:  # 99.5% 이상 실행됨
-                    st.success(f"전체 USDT 중 {executed_amount:.1f} USDT가 평균 시장가 {executed_price:.2f} KRW에 매도되었습니다.")
-                    return True
-                else:
-                    st.warning(f"{executed_amount:.1f} USDT가 매도되었습니다. 남은 수량을 다시 매도합니다.")
-                    return place_market_sell_all(initial_balance, attempt + 1)
-            else:
-                st.warning(f"주문이 접수되었지만 상세 정보를 가져올 수 없습니다. 남은 수량을 다시 확인합니다.")
-                return place_market_sell_all(initial_balance, attempt + 1)
-        else:
-            st.error("시장가 매도 중 오류가 발생했습니다.")
-            return False
-    else:
-        if attempt == 1:
-            st.error("판매할 USDT가 없습니다.")
-        else:
-            st.success("모든 USDT가 성공적으로 매도되었습니다.")
-        return True
 
 # 자동으로 잔고와 주문내역 업데이트 함수
 def update_data():
@@ -485,26 +440,6 @@ st.markdown("""
         font-size: 0.6rem !important;
         padding: 2px 5px !important;
     }
-    .stRadio [role=radiogroup] {
-        flex-direction: row;
-        justify-content: space-between;
-    }
-    .stRadio [role=radiogroup] label {
-        width: 50%;
-        padding: 10px;
-        text-align: center;
-        transition: all 0.3s ease;
-    }
-    .stRadio [role=radiogroup] label:first-child {
-        text-align: left;
-    }
-    .stRadio [role=radiogroup] label:last-child {
-        text-align: right;
-    }
-    .stRadio [role=radiogroup] label[data-baseweb="radio"] input:checked + div {
-        background-color: #4CAF50;
-        color: white;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -518,46 +453,8 @@ with col_right:
     order_type_display = st.selectbox("주문 유형", ["지정가"], key='order_type')
     order_type = "LIMIT" if order_type_display == "지정가" else "MARKET" if order_type_display == "시장가" else "STOP_LIMIT"
 
-    # 커스텀 라디오 버튼 스타일
-    st.markdown("""
-    <style>
-    .stRadio [role=radiogroup] {
-        flex-direction: row;
-        justify-content: space-between;
-    }
-    .stRadio [role=radiogroup] label {
-        width: 50%;
-        padding: 10px;
-        text-align: center;
-        transition: all 0.3s ease;
-    }
-    .stRadio [role=radiogroup] label:first-child {
-        text-align: left;
-    }
-    .stRadio [role=radiogroup] label:last-child {
-        text-align: right;
-    }
-    .stRadio [role=radiogroup] label[data-baseweb="radio"] input:checked + div {
-        background-color: #4CAF50;
-        color: white;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    side_display = st.radio("주문 종류", ["매도", "매수"], horizontal=True, key='side_radio')
+    side_display = st.radio("주문 종류", ["매도", "매수"], horizontal=True)
     side = "SELL" if side_display == "매도" else "BUY"
-
-    # 선택된 주문 종류에 따라 스타일 적용
-    st.markdown(f"""
-    <style>
-        div[data-testid="stRadio"] > div > label:nth-child(1) {{
-            text-align: {'left' if side == 'SELL' else 'center'};
-        }}
-        div[data-testid="stRadio"] > div > label:nth-child(2) {{
-            text-align: {'center' if side == 'SELL' else 'right'};
-        }}
-    </style>
-    """, unsafe_allow_html=True)
 
     if order_type != "MARKET":
         col1, col2 = st.columns([1, 2])
@@ -595,7 +492,7 @@ with col_right:
     # Calculate quantity based on percentage and price
     quantity = '0'
     krw_equivalent = 0  # KRW로 환산된 금액
-    if isinstance(percentage, (int, float)) and percentage > 0:
+    if percentage > 0:
         try:
             if order_type != "MARKET" and (price is None or price == ''):
                 st.warning("가격을 입력해주세요.")
@@ -630,34 +527,28 @@ with col_right:
         quantity = st.text_input("수량 (USDT)", value="0")
 
     button_color = "sell-button" if side == "SELL" else "buy-button"
-    if st.button(f"{side_display} 주문하기", key="place_order", help="클릭하여 주문 실행"):
+    if st.button(f"{side_display} 주문하기", key="place_order", help="클릭하여 주문 실행", use_container_width=True):
         place_order(order_type, side, price, quantity)
-
-    # 전체 시장가 매도 버튼 추가
-    if st.button("전체 시장가 매도", key="market_sell_all", help="전체 USDT를 시장가로 매도"):
-        confirm = st.button("정말로 전체 USDT를 시장가로 매도하시겠습니까?", key="confirm_market_sell_all")
-        if confirm:
-            place_market_sell_all()
 
     st.markdown("</div>", unsafe_allow_html=True)
 
     # 미체결 주문 관련 기능 추가
-    st.markdown("### 미체결 주문")
+    st.markdown(f"### {side_display} 미체결 주문")
     orders = fetch_active_orders()
-
-    if orders:
-        for order in orders:
-            col1, col2, col3, col4, col5, col6 = st.columns(6)
+    filtered_orders = [order for order in orders if order['side'] == side]
+    
+    if filtered_orders:
+        for order in filtered_orders:
+            col1, col2, col3, col4, col5 = st.columns(5)
             col1.write(f"종목: {order['target_currency']}")
             col2.write(f"유형: {order['type']}")
-            col3.write(f"매수/매도: {order['side']}")
-            col4.write(f"가격: {float(order['price']):,.2f}")
-            col5.write(f"수량: {float(order['remain_qty']):,.4f}")
-            if col6.button(f"취소", key=f"cancel_{order['order_id']}", help="클릭하여 주문 취소"):
+            col3.write(f"가격: {float(order['price']):,.2f}")
+            col4.write(f"수량: {float(order['remain_qty']):,.4f}")
+            if col5.button(f"취소", key=f"cancel_{order['order_id']}", help="클릭하여 주문 취소"):
                 cancel_order(order['order_id'])
-                st.experimental_rerun()
+                st.rerun()
     else:
-        st.info("미체결 주문 없음")
+        st.info(f"{side_display} 미체결 주문 없음")
 
     # UUID 조회 기능 추가
     st.markdown("### 주문 조회")
