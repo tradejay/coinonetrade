@@ -61,15 +61,15 @@ def save_order_log(log_data):
 ACCESS_TOKEN = st.secrets.get("access_key", "")
 SECRET_KEY = bytes(st.secrets.get("private_key", ""), 'utf-8')
 
-# 로컬 환경에서 secrets.toml 파일 로드 (이 부분은 Streamlit Cloud에서는 실행되지 않음)
-if not os.getenv('STREAMLIT_SERVER_URL'):  # Streamlit Cloud에서 실행 중이 아닐 때
-    try:
-        from dotenv import load_dotenv
-        load_dotenv('.streamlit/secrets.toml')
-        ACCESS_TOKEN = os.getenv("access_key", "")
-        SECRET_KEY = bytes(os.getenv("private_key", ""), 'utf-8')
-    except ImportError:
-        st.warning("dotenv 모듈을 찾을 수 없습니다. 로컬 환경에서 실행 중이라면 'pip install python-dotenv'를 실행하세요.")
+# # 로컬 환경에서 secrets.toml 파일 로드 (이 부분은 Streamlit Cloud에서는 실행되지 않음)
+# if not os.getenv('STREAMLIT_SERVER_URL'):  # Streamlit Cloud에서 실행 중이 아닐 때
+#     try:
+#         from dotenv import load_dotenv
+#         load_dotenv('.streamlit/secrets.toml')
+#         ACCESS_TOKEN = os.getenv("access_key", "")
+#         SECRET_KEY = bytes(os.getenv("private_key", ""), 'utf-8')
+#     except ImportError:
+#         st.warning("dotenv 모듈을 찾을 수 없습니다. 로컬 환경에서 실행 중이라면 'pip install python-dotenv'를 실행하세요.")
 
 def fetch_order_detail(order_id):
     action = "/v2.1/order/detail"
