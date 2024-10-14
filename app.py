@@ -585,7 +585,8 @@ with col_right:
                 st.success("호가 정보가 업데이트되었습니다.")
 
         with col2:
-            price_display = st.text_input("가격 (KRW)", st.session_state.get('selected_price', ''), key='price')
+            # Change the key for this text input
+            price_display = st.text_input("가격 (KRW)", st.session_state.get('selected_price', ''), key='price_input')
             st.markdown('<style>div[data-testid="stTextInput"] > div > div > input { font-size: 1rem !important; }</style>', unsafe_allow_html=True)
             price = price_display.replace(',', '') if price_display else None
     else:
@@ -624,7 +625,8 @@ with col_right:
     st.markdown("<div class='small-font'>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
-        quantity_input = st.text_input("수량 (USDT)", value=quantity, disabled=True)
+        # Change the key for this text input
+        quantity_input = st.text_input("수량 (USDT)", value=quantity, disabled=True, key='quantity_display')
     with col2:
         st.write(f"환산 금액: {krw_equivalent:,.0f} KRW")
     st.markdown("</div>", unsafe_allow_html=True)
@@ -662,7 +664,8 @@ with col_right:
 
     # UUID 조회 기능 추가
     st.markdown("### 주문 조회")
-    order_id_input = st.text_input("주문 ID 입력", key="order_id_input")
+    # Change the key for this text input
+    order_id_input = st.text_input("주문 ID 입력", key="order_id_input_field")
     if st.button("주문 조회", key="fetch_order_detail"):
         if order_id_input:
             order_detail = fetch_order_detail(order_id_input)
